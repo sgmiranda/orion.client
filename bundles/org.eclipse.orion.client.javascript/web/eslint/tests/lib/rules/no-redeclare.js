@@ -89,6 +89,31 @@ describe(RULE_ID, function() {
 		assert.equal(messages[0].message, "'f' is already defined.");
 		assert.equal(messages[0].node.type, "VariableDeclarator");
 	});
+	it("should flag named function that collides with named function from upper scope", function() {
+		var topic = "function f() { function f() { } }";
+
+		var config = { rules: {} };
+		config.rules[RULE_ID] = 1;
+
+		var messages = eslint.verify(topic, config);
+		assert.equal(messages.length, 1);
+		assert.equal(messages[0].ruleId, RULE_ID);
+		assert.equal(messages[0].message, "'f' is already defined.");
+		assert.equal(messages[0].node.type, "FunctionDeclaration");
+		assert.equal(messages[0].node.range.start, 24); // The 2nd one is considered the culprit
+	});
+	it("should flag redeclaration of parameter", function() {
+		var topic = "function f(a) { var a; }";
+
+		var config = { rules: {} };
+		config.rules[RULE_ID] = 1;
+
+		var messages = eslint.verify(topic, config);
+		assert.equal(messages.length, 1);
+		assert.equal(messages[0].ruleId, RULE_ID);
+		assert.equal(messages[0].message, "'a' is already defined.");
+		assert.equal(messages[0].node.type, "VariableDeclarator");
+	});
 
 	//------------------------------------------------------------------------------
 	// Thou shalt nots

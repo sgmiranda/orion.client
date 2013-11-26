@@ -12,10 +12,10 @@
 /*global define module require exports */
 (function(root, factory) {
 	if(typeof exports === 'object') {
-		module.exports = factory(require, exports, module);
+		module.exports = factory(require('../util'), require, exports, module);
 	}
 	else if(typeof define === 'function' && define.amd) {
-		define(['require', 'exports', 'module'], factory);
+		define(['eslint/util', 'require', 'exports', 'module'], factory);
 	}
 	else {
 		var req = function(id) {return root[id];},
@@ -23,28 +23,65 @@
 			mod = {exports: exp};
 		root.rules.noundef = factory(req, exp, mod);
 	}
-}(this, function(require, exports, module) {
+}(this, function(util, require, exports, module) {
 	module.exports = function(context) {
 		"use strict";
 
-		function checkScope(node) {
-			var scope = context.getScope();
-			var functionName;
-			if (node.type === "FunctionDeclaration" || node.type === "FunctionExpression") {
-				functionName = node.id && node.id.name;
-			}
+		function reportRedecl(problemNode, name, relatedNode) {
+			context.report(problemNode, "'{{name}}' is already defined.", {name: name});
+		}
+
+		function addNamedFunctions(target, scope) {
 			scope.variables.forEach(function(variable) {
-				// TODO This check is inadequate for deep scopes
-//				if (functionName && variable.name === functionName) {
-////					context.report(variable.defs[variable.defs.length - 1].node, "'{{name}}' is already defined.", {name: functionName});
-//				}
+				variable.defs.some(function(def) {
+					if (def.type === "FunctionName") {
+						// TODO detect clobber
+						var name = def.name.name;
+						if (Object.prototype.hasOwnProperty.call(target, name)) {
+							// This named function redeclares an upper scope's named function
+							reportRedecl(def, name);
+						} else {
+							target[name] = scope;
+						}
+						return true;
+					}
+					return false;
+				});
+			});
+		}
+
+		function checkScope(node) {
+			var scope = context.getScope(), upper = scope.upper;
+
+			// Maps {String} -> {Identifier AST Node}
+			var namedFunctions = Object.create(null);
+			if (upper) {
+				// Propagate upper scope's named functions to ours
+				util.mixin(namedFunctions, upper._namedFunctions);
+			}
+//			console.log('named functions for ' + node.type);
+//			console.log(Object.keys(namedFunctions));
+			addNamedFunctions(namedFunctions, scope);
+			scope._namedFunctions = namedFunctions;
+
+			// Check for clobber of named on anemd fi
+
+			scope.variables.forEach(function(variable) {
+				// If variable collides with a function name from an upper scope.. that's a redeclaration
+				var boundInScope;
+				if (node.type !== "Program" && (boundInScope = namedFunctions[variable.name]) && boundInScope !== scope) {
+					reportRedecl(variable.defs[0].node, variable.name);
+					return; // ?
+				}
+
+				// If variable has multiple defs.. you better believe that's a redeclaration
 				var defs = variable.defs;
 				if (defs.length <= 1) {
 					return;
 				}
 				defs.forEach(function(def, i) {
 					if (i >= 1) {
-						context.report(def.node, "'{{name}}' is already defined.", {name: def.name.name});
+						reportRedecl(def.node, def.name.name);
 					}
 				});
 			});
